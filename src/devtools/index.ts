@@ -33,23 +33,36 @@ class DevToolsExtension {
 	 * @constructor
 	 * @param {TEditor.IExtensionContext} context - extension context
 	 */
-	constructor(context: TEditor.IExtensionContext) {
-		this.vscodeEditor = new TEditor.VSCodeEditor(context);
-		this.mcdev = new Mcdev();
-	}
+        constructor(context: TEditor.IExtensionContext) {
+                this.vscodeEditor = new TEditor.VSCodeEditor(context);
+                this.mcdev = new Mcdev();
+        }
 
-	/**
-	 * Initializes the extension
-	 *
-	 * @async
-	 * @returns {Promise<void>}
-	 */
-	async init(): Promise<void> {
-		console.log("== Init ==");
-		// Checks if is there any DevTools Project
-		const isDevToolsProject = await this.isDevToolsProject();
-		if (isDevToolsProject) this.loadConfiguration();
-	}
+        /**
+         * Initializes telemetry submission (placeholder)
+         *
+         * @private
+         * @async
+         * @returns {Promise<void>}
+         */
+        private async initTelemetry(): Promise<void> {
+                // TODO: Inject telemetry submission implementation here
+                return;
+        }
+
+        /**
+         * Initializes the extension
+         *
+         * @async
+         * @returns {Promise<void>}
+         */
+        async init(): Promise<void> {
+                console.log("== Init ==");
+                await this.initTelemetry();
+                // Checks if is there any DevTools Project
+                const isDevToolsProject = await this.isDevToolsProject();
+                if (isDevToolsProject) this.loadConfiguration();
+        }
 
 	/**
 	 * Checks if the current VSCode workspace has DevTools projects
