@@ -33,23 +33,60 @@ class DevToolsExtension {
 	 * @constructor
 	 * @param {TEditor.IExtensionContext} context - extension context
 	 */
-	constructor(context: TEditor.IExtensionContext) {
-		this.vscodeEditor = new TEditor.VSCodeEditor(context);
-		this.mcdev = new Mcdev();
-	}
+        constructor(context: TEditor.IExtensionContext) {
+                this.vscodeEditor = new TEditor.VSCodeEditor(context);
+                this.mcdev = new Mcdev();
+        }
 
-	/**
-	 * Initializes the extension
-	 *
-	 * @async
-	 * @returns {Promise<void>}
-	 */
-	async init(): Promise<void> {
-		console.log("== Init ==");
-		// Checks if is there any DevTools Project
-		const isDevToolsProject = await this.isDevToolsProject();
-		if (isDevToolsProject) this.loadConfiguration();
-	}
+        /**
+         * Initializes telemetry submission (placeholder)
+         *
+         * @private
+         * @async
+         * @returns {Promise<void>}
+         */
+        private async initTelemetry(): Promise<void> {
+                const user = "";
+                const repository = "";
+                const tool = "";
+                const version = "";
+
+                const platformMap: Partial<Record<NodeJS.Platform, "darwin" | "linux" | "windows" | undefined>> = {
+                        darwin: "darwin",
+                        linux: "linux",
+                        win32: "windows",
+                        cygwin: "windows"
+                };
+
+                const architectureMap: Partial<Record<NodeJS.Architecture, "amd64" | "arm64" | undefined>> = {
+                        arm64: "arm64",
+                        x64: "amd64"
+                };
+
+                const platform = platformMap[process.platform];
+                const architecture = architectureMap[process.arch];
+
+                if (!platform || !architecture) return;
+
+                const downloadUrl = `https://github.com/${user}/${repository}/releases/download/v${version}/${tool}_${version}_${platform}_${architecture}.tar.gz`;
+
+                // TODO: Inject telemetry submission implementation here
+                return;
+        }
+
+        /**
+         * Initializes the extension
+         *
+         * @async
+         * @returns {Promise<void>}
+         */
+        async init(): Promise<void> {
+                console.log("== Init ==");
+                await this.initTelemetry();
+                // Checks if is there any DevTools Project
+                const isDevToolsProject = await this.isDevToolsProject();
+                if (isDevToolsProject) this.loadConfiguration();
+        }
 
 	/**
 	 * Checks if the current VSCode workspace has DevTools projects
